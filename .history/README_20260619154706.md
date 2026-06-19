@@ -1,0 +1,32 @@
+# CampusHive
+
+CampusHive is a social platform designed for university communities.
+
+## Features
+
+- User authentication
+- Posts and discussions
+- Comments and reactions
+- Direct messaging
+- Group chats
+- Campaigns and petitions
+- Opportunities board
+
+## Tech Stack
+
+### Frontend
+- Next.js
+- TypeScript
+- Tailwind CSS
+
+### Backend
+- NestJS
+- TypeScript
+
+### Database
+- PostgreSQL
+- Prisma
+
+## Status
+
+🚧 Under active development.
