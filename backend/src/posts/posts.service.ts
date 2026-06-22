@@ -1,4 +1,28 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreatePostDto } from './dto/create-post.dto';
 
 @Injectable()
-export class PostsService {}
+export class PostsService {
+  constructor(private prisma: PrismaService) {}
+
+  create(authorId: string, dto: CreatePostDto) {
+    return this.prisma.post.create({
+      data: {
+        content: dto.content,
+        authorId,
+      },
+    });
+  }
+
+  getFeed() {
+    return this.prisma.post.findMany({
+      include: {
+        author: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+}
