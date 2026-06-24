@@ -18,8 +18,21 @@ export class PostsService {
   getFeed() {
     return this.prisma.post.findMany({
       include: {
-        author: true,
-        likes: true,
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            avatarUrl: true,
+          },
+        },
+        _count: {
+          select: {
+            likes: true,
+            comments: true,
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',

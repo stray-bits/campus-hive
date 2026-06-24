@@ -20,7 +20,7 @@ export class CommentsService {
     return this.prisma.comment.findMany({
       where: { postId },
       include: { author: true },
-      orderBy: { createdAt: 'asc'},
+      orderBy: { createdAt: 'asc' },
     });
   }
 }

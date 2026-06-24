@@ -22,7 +22,7 @@ export class UsersService {
     });
   }
 
-  async findById(id: string){
+  async findById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
       select: {
@@ -52,6 +52,19 @@ export class UsersService {
     return this.prisma.user.update({
       where: { id: userId },
       data,
+    });
+  }
+
+  async search(query: string) {
+    return this.prisma.user.findMany({
+      where: {
+        OR: [
+          { firstName: { contains: query, mode: 'insensitive' } },
+          { lastName: { contains: query, mode: 'insensitive' } },
+          { username: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      take: 20, //show 20 search results
     });
   }
 }
