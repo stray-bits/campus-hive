@@ -7,12 +7,29 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 export class CommentsService {
   constructor(private prisma: PrismaService) {}
 
-  create(authorId: string, postId: string, dto: CreateCommentDto) {
+  async create(authorId: string, postId: string, dto: CreateCommentDto) {
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
     return this.prisma.comment.create({
       data: {
         content: dto.content,
         postId,
         authorId,
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            avatarUrl: true,
+          },
+        },
       },
     });
   }
@@ -20,7 +37,17 @@ export class CommentsService {
   getComments(postId: string) {
     return this.prisma.comment.findMany({
       where: { postId },
-      include: { author: true },
+      include: {
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            avatarUrl: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
   }

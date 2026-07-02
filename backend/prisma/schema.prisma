@@ -23,6 +23,7 @@ model User {
   posts          Post[]
   comments       Comment[]
   likes          Like[]
+  bookmarks      Bookmark[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -30,10 +31,12 @@ model User {
 model Post {
   id        String   @id @default(cuid())
   content   String?
+  imageUrl  String?
   authorId  String
   author    User     @relation(fields: [authorId], references: [id])
   comments  Comment[]
   likes     Like[]
+  bookmarks Bookmark[]
   categoryId String
   category Category @relation(fields: [categoryId], references: [id])
   createdAt DateTime @default(now())
@@ -64,4 +67,14 @@ model Category {
   id        String @id @default(cuid())
   name      String @unique
   posts Post[]
+}
+
+model Bookmark {
+  id        String @id @default(cuid())
+  userId    String
+  postId    String
+  user User @relation(fields:[userId], references:[id])
+  post Post @relation(fields:[postId], references:[id])
+  createdAt DateTime @default(now())
+  @@unique([userId, postId])
 }

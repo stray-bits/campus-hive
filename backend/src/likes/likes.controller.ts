@@ -1,7 +1,6 @@
-import { Controller, Post, Delete, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Delete, Param, Req, UseGuards, Get } from '@nestjs/common';
 import { LikesService } from './likes.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-
 
 @Controller('posts')
 export class LikesController {
@@ -15,5 +14,11 @@ export class LikesController {
   @UseGuards(JwtAuthGuard) @Delete(':id/like')
   unlike(@Param('id') postId: string, @Req() req: any) {
     return this.likesService.unlikePost(req.user.userId, postId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/liked')
+  isLiked(@Param('id') postId: string, @Req() req: any) {
+    return this.likesService.isLiked(req.user.userId, postId);
   }
 }
