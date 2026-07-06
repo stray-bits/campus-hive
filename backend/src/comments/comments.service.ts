@@ -2,6 +2,8 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
+import { formatComment } from '../common/formatters/post-response.util';
+import { resolveMentions } from '../common/utils/mentions.util';
 
 @Injectable()
 export class CommentsService {
@@ -14,7 +16,7 @@ export class CommentsService {
     if (!post) {
       throw new NotFoundException('Post not found');
     }
-    return this.prisma.comment.create({
+    const comment = await this.prisma.comment.create({
       data: {
         content: dto.content,
         postId,
@@ -32,10 +34,18 @@ export class CommentsService {
         },
       },
     });
+    const mentions = await resolveMentions(this.prisma, comment.content);
+    return formatComment(comment, mentions);
   }
 
-  getComments(postId: string) {
-    return this.prisma.comment.findMany({
+  async getComments(postId: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    const comments = await this.prisma.comment.findMany({
       where: { postId },
       include: {
         author: {
@@ -50,31 +60,57 @@ export class CommentsService {
       },
       orderBy: { createdAt: 'asc' },
     });
+    const formattedComments = await Promise.all(
+      comments.map(async (comment) => {
+        const mentions = await resolveMentions(this.prisma, comment.content);
+        return formatComment(comment, mentions);
+      }),
+    );
+    return formattedComments;
   }
 
   async update(id: string, authorId: string, dto: UpdateCommentDto) {
-    const comment = await this.prisma.comment.findUnique({ where: { id } });
+    const comment = await this.prisma.comment.findUnique({
+      where: { id },
+    });
     if (!comment) {
       throw new NotFoundException('Comment not found');
     }
-    if (comment.authorId != authorId) {
+    if (comment.authorId !== authorId) {
       throw new ForbiddenException('You can only edit your own comments');
     }
-    return this.prisma.comment.update({
+    const updatedComment = await this.prisma.comment.update({
       where: { id },
       data: { content: dto.content },
+      include: {
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            avatarUrl: true,
+          },
+        },
+      },
     });
+    const mentions = await resolveMentions(this.prisma, updatedComment.content);
+    return formatComment(updatedComment, mentions);
   }
 
   async delete(id: string, authorId: string) {
-    const comment = await this.prisma.comment.findUnique({ where: { id } });
+    const comment = await this.prisma.comment.findUnique({
+      where: { id },
+    });
     if (!comment) {
       throw new NotFoundException('Comment not found');
     }
-    if (comment.authorId != authorId) {
+    if (comment.authorId !== authorId) {
       throw new ForbiddenException('You can only delete your own comments');
     }
-    await this.prisma.comment.delete({ where: { id } });
+    await this.prisma.comment.delete({
+      where: { id },
+    });
     return {
       message: 'Comment deleted successfully',
     };

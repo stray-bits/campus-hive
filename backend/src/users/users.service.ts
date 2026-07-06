@@ -1,14 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as fs from 'fs';
+import { formatPost } from '../common/formatters/post-response.util';
 import { join } from 'path';
+import * as fs from 'fs';
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
   findByEmail(email: string) {
-    return this.prisma['user'].findUnique({
+    return this.prisma.user.findUnique({
       where: { email },
     });
   }
@@ -19,12 +20,66 @@ export class UsersService {
     firstName: string;
     lastName: string;
   }) {
-    return this.prisma['user'].create({ data });
+    return this.prisma.user.create({
+      data,
+    });
   }
 
-  async findById(id: string) {
-    return this.prisma.user.findUnique({
-      where: { id },
+  async findMe(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        bio: true,
+        department: true,
+        graduationYear: true,
+        avatarUrl: true,
+        createdAt: true,
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
+
+  async getPublicProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        bio: true,
+        department: true,
+        graduationYear: true,
+        avatarUrl: true,
+        createdAt: true,
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
+
+  async updateProfile(
+    userId: string,
+    data: {
+      username?: string;
+      bio?: string;
+      department?: string;
+      graduationYear?: number;
+    },
+  ) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data,
       select: {
         id: true,
         email: true,
@@ -40,21 +95,6 @@ export class UsersService {
     });
   }
 
-  async updateProfile(
-    userId: string,
-    data: {
-      username?: string;
-      bio?: string;
-      department?: string;
-      graduationYear?: number;
-    },
-  ) {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data,
-    });
-  }
-
   async uploadAvatar(userId: string, avatar?: Express.Multer.File) {
     if (!avatar) {
       throw new BadRequestException('Avatar image is required');
@@ -65,7 +105,6 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    // delete old avatar file if it exists
     if (user.avatarUrl) {
       const oldAvatarPath = join(process.cwd(), user.avatarUrl.replace(/^\//, ''));
       if (fs.existsSync(oldAvatarPath)) {
@@ -94,7 +133,17 @@ export class UsersService {
           { username: { contains: query, mode: 'insensitive' } },
         ],
       },
-      take: 20, //show 20 search results
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        bio: true,
+        department: true,
+        graduationYear: true,
+        avatarUrl: true,
+      },
+      take: 20,
     });
   }
 
@@ -105,19 +154,10 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-
     const posts = await this.prisma.post.findMany({
       where: { authorId: userId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        content: true,
-        imageUrl: true,
-        createdAt: true,
-        updatedAt: true,
-        category: {
-          select: { id: true, name: true },
-        },
+      include: {
+        category: true,
         author: {
           select: {
             id: true,
@@ -128,36 +168,21 @@ export class UsersService {
           },
         },
         _count: {
-          select: { likes: true, comments: true, bookmarks: true },
+          select: {
+            likes: true,
+            comments: true,
+            bookmarks: true,
+          },
         },
-        ...(currentUserId
-          ? {
-              likes: { where: { userId: currentUserId }, select: { id: true } },
-              bookmarks: { where: { userId: currentUserId }, select: { id: true } },
-            }
-          : {}),
+        likes: {
+          select: { userId: true },
+        },
+        bookmarks: {
+          select: { userId: true },
+        },
       },
+      orderBy: { createdAt: 'desc' },
     });
-
-    return posts.map((post) => ({
-      id: post.id,
-      content: post.content,
-      imageUrl: post.imageUrl,
-      createdAt: post.createdAt,
-      updatedAt: post.updatedAt,
-      category: post.category,
-      author: post.author,
-      counts: {
-        likes: post._count.likes,
-        comments: post._count.comments,
-        bookmarks: post._count.bookmarks,
-      },
-      ...(currentUserId
-        ? {
-            likedByMe: post.likes.length > 0,
-            bookmarkedByMe: post.bookmarks.length > 0,
-          }
-        : {}),
-    }));
+    return posts.map((post) => formatPost(post, currentUserId));
   }
 }

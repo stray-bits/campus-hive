@@ -12,7 +12,7 @@ import { CommentsModule } from './comments/comments.module';
 import { LikesModule } from './likes/likes.module';
 import { CategoriesModule } from './categories/categories.module';
 import { BookmarksModule } from './bookmarks/bookmarks.module';
-import { UploadsModule } from './uploads/uploads.module';
+import { UploadsModule } from '../uploads/uploads.module';
 
 @Module({
   imports: [

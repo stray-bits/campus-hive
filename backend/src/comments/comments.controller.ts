@@ -8,7 +8,8 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 export class CommentsController {
   constructor(private commentsService: CommentsService) {}
 
-  @UseGuards(JwtAuthGuard) @Post('posts/:id/comments')
+  @UseGuards(JwtAuthGuard)
+  @Post('posts/:id/comments')
   createComment(
     @Param('id') postId: string,
     @Req() req: any,
@@ -34,10 +35,7 @@ export class CommentsController {
 
   @UseGuards(JwtAuthGuard)
   @Delete('comments/:id')
-  deleteComment(
-    @Param('id') id: string,
-    @Req() req: any,
-  ) {
+  deleteComment(@Param('id') id: string, @Req() req: any) {
     return this.commentsService.delete(id, req.user.userId);
   }
 }

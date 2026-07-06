@@ -8,73 +8,105 @@ datasource db {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
-  password       String
-  firstName      String
-  lastName       String
-
-  username       String?  @unique
-  bio            String?
-  department     String?
-  graduationYear Int?
-  avatarUrl      String?
-
-  posts          Post[]
-  comments       Comment[]
-  likes          Like[]
-  bookmarks      Bookmark[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String           @id @default(cuid())
+  email           String           @unique
+  password        String
+  firstName       String
+  lastName        String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  avatarUrl       String?
+  bio             String?
+  department      String?
+  graduationYear  Int?
+  username        String?          @unique
+  bookmarks       Bookmark[]
+  comments        Comment[]
+  commentMentions CommentMention[]
+  likes           Like[]
+  posts           Post[]
+  postMentions    PostMention[]
 }
 
 model Post {
-  id        String   @id @default(cuid())
-  content   String?
-  imageUrl  String?
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
-  comments  Comment[]
-  likes     Like[]
-  bookmarks Bookmark[]
-  categoryId String
-  category Category @relation(fields: [categoryId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String        @id @default(cuid())
+  content            String?
+  authorId           String
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  categoryId         String
+  imageUrl           String?
+  attachmentName     String?
+  attachmentUrl      String?
+  videoUrl           String?
+  attachmentMimeType String?
+  bookmarks          Bookmark[]
+  comments           Comment[]
+  likes              Like[]
+  author             User          @relation(fields: [authorId], references: [id])
+  category           Category      @relation(fields: [categoryId], references: [id])
+  mentions           PostMention[]
 }
 
 model Comment {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   content   String
   postId    String
-  post      Post    @relation(fields: [postId], references: [id])
   authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
+  createdAt DateTime         @default(now())
+  author    User             @relation(fields: [authorId], references: [id])
+  post      Post             @relation(fields: [postId], references: [id])
+  mentions  CommentMention[]
 }
 
 model Like {
   id        String   @id @default(cuid())
   userId    String
-  user      User @relation(fields: [userId], references: [id])
   postId    String
-  post      Post    @relation(fields: [postId], references: [id])
   createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
   @@unique([userId, postId])
 }
 
 model Category {
-  id        String @id @default(cuid())
-  name      String @unique
+  id    String @id @default(cuid())
+  name  String @unique
   posts Post[]
 }
 
 model Bookmark {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   postId    String
-  user User @relation(fields:[userId], references:[id])
-  post Post @relation(fields:[postId], references:[id])
   createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
   @@unique([userId, postId])
+}
+
+model PostMention {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  username  String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+model CommentMention {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  username  String
+  createdAt DateTime @default(now())
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
 }

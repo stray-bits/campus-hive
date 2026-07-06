@@ -2,18 +2,21 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { formatPost } from '../common/formatters/post-response.util';
+import { join, extname } from 'path';
 import * as fs from 'fs';
-import { join } from 'path';
 
 @Injectable()
 export class PostsService {
   constructor(private prisma: PrismaService) {}
 
-  private postSelect(userId?: string) {
+  private postSelect(currentUserId?: string) {
     return {
       id: true,
       content: true,
       imageUrl: true,
+      videoUrl: true,
+      attachmentUrl: true,
       createdAt: true,
       updatedAt: true,
       category: {
@@ -29,69 +32,97 @@ export class PostsService {
         },
       },
       _count: {
-        select: { likes: true, comments: true, bookmarks: true },
+        select: {
+          likes: true,
+          comments: true,
+          bookmarks: true,
+        },
       },
-      ...(userId
+      likes: currentUserId
         ? {
-            likes: { where: { userId }, select: { id: true } },
-            bookmarks: { where: { userId }, select: { id: true } },
+            where: { userId: currentUserId },
+            select: { userId: true },
           }
-        : {}),
+        : { select: { userId: true } },
+      bookmarks: currentUserId
+        ? {
+            where: { userId: currentUserId },
+            select: { userId: true },
+          }
+        : { select: { userId: true } },
     };
   }
 
-  private formatPost(post: any, userId?: string) {
+  private postWithCommentsSelect(currentUserId?: string) {
     return {
-      id: post.id,
-      content: post.content,
-      imageUrl: post.imageUrl,
-      createdAt: post.createdAt,
-      updatedAt: post.updatedAt,
-      category: post.category,
-      author: post.author,
-      counts: {
-        likes: post._count?.likes ?? 0,
-        comments: post._count?.comments ?? 0,
-        bookmarks: post._count?.bookmarks ?? 0,
+      ...this.postSelect(currentUserId),
+      comments: {
+        orderBy: { createdAt: 'asc' as const },
+        include: {
+          author: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              avatarUrl: true,
+            },
+          },
+        },
       },
-      ...(userId
-        ? {
-            likedByMe: (post.likes?.length ?? 0) > 0,
-            bookmarkedByMe: (post.bookmarks?.length ?? 0) > 0,
-          }
-        : {}),
     };
   }
 
-  async create(authorId: string, dto: CreatePostDto, image?: Express.Multer.File) {
+  async create(
+    authorId: string,
+    dto: CreatePostDto,
+    files?: {
+      image?: Express.Multer.File[];
+      video?: Express.Multer.File[];
+      attachment?: Express.Multer.File[];
+    },
+  ) {
+    const image = files?.image?.[0];
+    const video = files?.video?.[0];
+    const attachment = files?.attachment?.[0];
+    if (!dto.content?.trim() && !image && !video && !attachment) {
+      throw new BadRequestException(
+        'Post must contain text, an image, a video, or an attachment'
+      );
+    }
     const generalCategory = await this.prisma.category.findFirst({
       where: { name: 'General' },
     });
     if (!generalCategory) {
       throw new NotFoundException('Default category "General" not found');
     }
+    const attachmentExt = attachment ? attachment.mimetype : null;
     const post = await this.prisma.post.create({
       data: {
         content: dto.content,
         authorId,
         categoryId: dto.categoryId ?? generalCategory.id,
-        imageUrl: image ? `/uploads/posts/${image.filename}` : null,
+        imageUrl: image ? `/uploads/posts/images/${image.filename}` : null,
+        videoUrl: video ? `/uploads/posts/videos/${video.filename}` : null,
+        attachmentUrl: attachment ? `/uploads/posts/files/${attachment.filename}` : null,
+        attachmentName: attachment ? attachment.originalname : null,
+        attachmentMimeType: attachmentExt,
       },
       select: this.postSelect(authorId),
     });
-    return this.formatPost(post, authorId);
+    return formatPost(post, authorId);
   }
 
-  async getFeed(userId?: string, category?: string) {
+  async getFeed(currentUserId?: string, category?: string) {
     const posts = await this.prisma.post.findMany({
-      where: category ? { category: { name: category }} : {},
-      select: this.postSelect(userId),
+      where: category ? { category: { name: category } } : {},
+      select: this.postSelect(currentUserId),
       orderBy: { createdAt: 'desc' },
     });
-    return posts.map((post) => this.formatPost(post, userId));
+    return posts.map((post) => formatPost(post, currentUserId));
   }
 
-  async search(query: string, userId?: string) {
+  async search(query: string, currentUserId?: string) {
     if (!query?.trim()) {
       throw new BadRequestException('Search query is required');
     }
@@ -105,52 +136,30 @@ export class PostsService {
           { author: { lastName: { contains: query, mode: 'insensitive' } } },
         ],
       },
-      select: this.postSelect(userId),
+      select: this.postSelect(currentUserId),
       orderBy: { createdAt: 'desc' },
     });
-    return posts.map((post) => this.formatPost(post, userId));
+    return posts.map((post) => formatPost(post, currentUserId));
   }
 
-  async getByCategory(categoryId: string, userId?: string) {
+  async getByCategory(categoryId: string, currentUserId?: string) {
     const posts = await this.prisma.post.findMany({
       where: { categoryId },
-      select: this.postSelect(userId),
+      select: this.postSelect(currentUserId),
       orderBy: { createdAt: 'desc' },
     });
-    return posts.map((post) => this.formatPost(post, userId));
+    return posts.map((post) => formatPost(post, currentUserId));
   }
 
-  async getPost(id: string, userId?: string) {
+  async getPost(id: string, currentUserId?: string) {
     const post = await this.prisma.post.findUnique({
       where: { id },
-      select: {
-        ...this.postSelect(userId),
-        comments: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            content: true,
-            createdAt: true,
-            author: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                username: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-      },
+      select: this.postWithCommentsSelect(currentUserId),
     });
     if (!post) {
       throw new NotFoundException('Post not found');
     }
-    return {
-      ...this.formatPost(post, userId),
-      comments: post.comments,
-    };
+    return formatPost(post, currentUserId);
   }
 
   async updatePost(postId: string, userId: string, dto: UpdatePostDto) {
@@ -163,12 +172,12 @@ export class PostsService {
     if (post.authorId !== userId) {
       throw new ForbiddenException('You can only edit your own posts');
     }
-    const updated = await this.prisma.post.update({
+    const updatedPost = await this.prisma.post.update({
       where: { id: postId },
       data: dto,
       select: this.postSelect(userId),
     });
-    return this.formatPost(updated, userId);
+    return formatPost(updatedPost, userId);
   }
 
   async deletePost(postId: string, userId: string) {
@@ -181,9 +190,9 @@ export class PostsService {
     if (post.authorId !== userId) {
       throw new ForbiddenException('You can only delete your own posts');
     }
-    // delete uploaded image file if post has one
-    if (post.imageUrl) {
-      const filePath = join(process.cwd(), post.imageUrl.replace(/^\//, ''));
+    const filePaths = [post.imageUrl, post.videoUrl, post.attachmentUrl].filter(Boolean) as string[];
+    for (const fileUrl of filePaths) {
+      const filePath = join(process.cwd(), fileUrl.replace(/^\//, ''));
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }

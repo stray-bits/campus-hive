@@ -1,12 +1,11 @@
-import { Controller, Body, Get, Post, UseGuards, Query, Param, Delete, Patch, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Body, Get, Post, UseGuards, Query, Param, Delete, Patch, Req, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UpdatePostDto } from './dto/update-post.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import * as fs from 'fs';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { postFilesUploadOptions } from '../common/upload/multer-options';
 
 @Controller('posts')
 export class PostsController {
@@ -15,65 +14,50 @@ export class PostsController {
   @UseGuards(JwtAuthGuard)
   @Post()
   @UseInterceptors(
-    FileInterceptor('image', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const uploadPath = join(process.cwd(), 'uploads', 'posts');
-          if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath, { recursive: true });
-          }
-          cb(null, uploadPath);
-        },
-        filename: (req, file, cb) => {
-          const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1e9) + extname(file.originalname);
-          cb(null, uniqueName);
-        },
-      }),
-      limits: { fileSize: 5 * 1024 * 1024 },
-      fileFilter: (req, file, cb) => {
-        const allowedMimeTypes = [
-          'image/jpeg',
-          'image/png',
-          'image/jpg',
-          'image/webp',
-        ];
-        if (!allowedMimeTypes.includes(file.mimetype)) {
-          return cb(new Error('Only JPG, PNG, or WEBP images are allowed'), false);
-        }
-        cb(null, true);
-      },
-    }),
+    FileFieldsInterceptor(
+      [
+        { name: 'image', maxCount: 1 },
+        { name: 'video', maxCount: 1 },
+        { name: 'attachment', maxCount: 1 },
+      ],
+      postFilesUploadOptions,
+    ),
   )
   create(
     @Req() req: any,
     @Body() dto: CreatePostDto,
-    @UploadedFile() image?: Express.Multer.File,
+    @UploadedFiles()
+    files: {
+      image?: Express.Multer.File[];
+      video?: Express.Multer.File[];
+      attachment?: Express.Multer.File[];
+    },
   ) {
-    return this.postsService.create(req.user.userId, dto, image);
+    return this.postsService.create(req.user.userId, dto, files);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('feed')
-  getFeed(@Req() req: any) {
-    return this.postsService.getFeed(req.user.userId);
+  getFeed(@Req() req: any, @Query('category') category?: string) {
+    return this.postsService.getFeed(req.user?.userId, category);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('search')
-  search(@Query('q') query: string, @Req() req: any) {
-    return this.postsService.search(query, req.user.userId);
+  search(@Req() req: any, @Query('q') query: string) {
+    return this.postsService.search(query, req.user?.userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('category/:id')
   getByCategory(@Param('id') id: string, @Req() req: any) {
-    return this.postsService.getByCategory(id, req.user.userId);
+    return this.postsService.getByCategory(id, req.user?.userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
   getPost(@Param('id') id: string, @Req() req: any) {
-    return this.postsService.getPost(id, req.user.userId);
+    return this.postsService.getPost(id, req.user?.userId);
   }
 
   @UseGuards(JwtAuthGuard)

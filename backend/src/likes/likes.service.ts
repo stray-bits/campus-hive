@@ -18,9 +18,19 @@ export class LikesService {
     if (existingLike) {
       throw new ConflictException('Post already liked');
     }
-    return this.prisma.like.create({
+    await this.prisma.like.create({
       data: { userId, postId },
     });
+    const likesCount = await this.prisma.like.count({
+      where: { postId },
+    });
+    return {
+      liked: true,
+      postId,
+      counts: {
+        likes: likesCount,
+      },
+    };
   }
 
   async unlikePost(userId: string, postId: string) {
@@ -33,8 +43,15 @@ export class LikesService {
     await this.prisma.like.delete({
       where: { userId_postId: { userId, postId } },
     });
+    const likesCount = await this.prisma.like.count({
+      where: { postId },
+    });
     return {
-      message: 'Post unliked successfully',
+      liked: false,
+      postId,
+      counts: {
+        likes: likesCount,
+      },
     };
   }
 
@@ -42,6 +59,8 @@ export class LikesService {
     const like = await this.prisma.like.findUnique({
       where: { userId_postId: { userId, postId } },
     });
-    return { liked: !!like };
+    return {
+      liked: !!like,
+    };
   }
 }

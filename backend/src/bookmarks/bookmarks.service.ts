@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { formatPost } from '../common/formatters/post-response.util';
 
 @Injectable()
 export class BookmarksService {
@@ -18,9 +19,19 @@ export class BookmarksService {
     if (existing) {
       throw new ConflictException('Post already bookmarked');
     }
-    return this.prisma.bookmark.create({
+    await this.prisma.bookmark.create({
       data: { userId, postId },
     });
+    const bookmarksCount = await this.prisma.bookmark.count({
+      where: { postId },
+    });
+    return {
+      bookmarked: true,
+      postId,
+      counts: {
+        bookmarks: bookmarksCount,
+      },
+    };
   }
 
   async removeBookmark(userId: string, postId: string) {
@@ -33,7 +44,16 @@ export class BookmarksService {
     await this.prisma.bookmark.delete({
       where: { userId_postId: { userId, postId } },
     });
-    return { message: 'Bookmark removed successfully' };
+    const bookmarksCount = await this.prisma.bookmark.count({
+      where: { postId },
+    });
+    return {
+      bookmarked: false,
+      postId,
+      counts: {
+        bookmarks: bookmarksCount,
+      },
+    };
   }
 
   async getUserBookmarks(userId: string) {
@@ -41,15 +61,8 @@ export class BookmarksService {
       where: { userId },
       include: {
         post: {
-          select: {
-            id: true,
-            content: true,
-            imageUrl: true,
-            createdAt: true,
-            updatedAt: true,
-            category: {
-              select: { id: true, name: true },
-            },
+          include: {
+            category: true,
             author: {
               select: {
                 id: true,
@@ -60,34 +73,28 @@ export class BookmarksService {
               },
             },
             _count: {
-              select: { likes: true, comments: true, bookmarks: true },
+              select: {
+                likes: true,
+                comments: true,
+                bookmarks: true,
+              },
             },
-            likes: { where: { userId }, select: { id: true } },
-            bookmarks: { where: { userId }, select: { id: true } },
+            likes: {
+              select: { userId: true },
+            },
+            bookmarks: {
+              select: { userId: true },
+            },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
+
     return bookmarks.map((bookmark) => ({
       id: bookmark.id,
       createdAt: bookmark.createdAt,
-      post: {
-        id: bookmark.post.id,
-        content: bookmark.post.content,
-        imageUrl: bookmark.post.imageUrl,
-        createdAt: bookmark.post.createdAt,
-        updatedAt: bookmark.post.updatedAt,
-        category: bookmark.post.category,
-        author: bookmark.post.author,
-        counts: {
-          likes: bookmark.post._count.likes,
-          comments: bookmark.post._count.comments,
-          bookmarks: bookmark.post._count.bookmarks,
-        },
-        likedByMe: bookmark.post.likes.length > 0,
-        bookmarkedByMe: bookmark.post.bookmarks.length > 0,
-      },
+      post: formatPost(bookmark.post, userId),
     }));
   }
 
@@ -95,6 +102,8 @@ export class BookmarksService {
     const bookmark = await this.prisma.bookmark.findUnique({
       where: { userId_postId: { userId, postId } },
     });
-    return { bookmarked: !!bookmark };
+    return {
+      bookmarked: !!bookmark,
+    };
   }
 }
