@@ -15,10 +15,12 @@ export async function resolveMentions(
   if (!usernames.length) return [];
   const users = await prisma.user.findMany({
     where: {
-      username: {
-        in: usernames,
-        mode: 'insensitive',
-      } as any,
+      OR: usernames.map((username) => ({
+        username: {
+          equals: username,
+          mode: 'insensitive',
+        },
+      })),
     },
     select: {
       id: true,

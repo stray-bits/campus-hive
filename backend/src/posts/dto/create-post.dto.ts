@@ -5,4 +5,6 @@ export class CreatePostDto {
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() categoryName?: string;
   @IsOptional() @IsString() imageUrl?: string;
+  @IsOptional() @IsString() videoUrl?: string;
+  @IsOptional() @IsString() attachmentUrl?: string;
 }

@@ -36,14 +36,17 @@ export function formatPost(post: any, currentUserId?: string) {
       ? {
           url: post.attachmentUrl,
           name: post.attachmentName,
-          type: post.attachmentType,
+          type: post.attachmentMimeType,
         }
       : null,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
 
     category: post.category
-      ? { id: post.category.id, name: post.category.name }
+      ? {
+          id: post.category.id,
+          name: post.category.name
+        }
       : null,
     author: formatAuthor(post.author),
     counts: {
@@ -51,12 +54,15 @@ export function formatPost(post: any, currentUserId?: string) {
       comments: post._count?.comments ?? 0,
       bookmarks: post._count?.bookmarks ?? 0,
     },
-    likedByMe: currentUserId 
-      ? (post.likes?.some((like: any) => like.userId === currentUserId) ?? false)
-      : false,
-    bookmarkedByMe: currentUserId
-      ? (post.bookmarks?.some((bookmark: any) => bookmark.userId === currentUserId) ?? false)
-      : false,
+    likedByMe: currentUserId ? (post.likes?.length ?? 0) > 0 : false,
+    bookmarkedByMe: currentUserId ? (post.bookmarks?.length ?? 0) > 0 : false,
+    mentions: post.mentions?.map((mention: any) => ({
+      userId: mention.user.id,
+      username: mention.user.username,
+      displayName:
+        [mention.user.firstName, mention.user.lastName].filter(Boolean).join(' ') ||
+        mention.user.username,
+    })) ?? [],
     comments: post.comments
       ? post.comments.map((comment: any) => formatComment(comment))
       : undefined,

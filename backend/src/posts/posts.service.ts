@@ -3,8 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { formatPost } from '../common/formatters/post-response.util';
-import { join, extname } from 'path';
+import { join } from 'path';
 import * as fs from 'fs';
+import { resolveMentions } from '../common/utils/mentions.util';
 
 @Injectable()
 export class PostsService {
@@ -50,6 +51,18 @@ export class PostsService {
             select: { userId: true },
           }
         : { select: { userId: true } },
+      mentions: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      },
     };
   }
 
@@ -66,6 +79,18 @@ export class PostsService {
               lastName: true,
               username: true,
               avatarUrl: true,
+            },
+          },
+          mentions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
             },
           },
         },
@@ -87,7 +112,7 @@ export class PostsService {
     const attachment = files?.attachment?.[0];
     if (!dto.content?.trim() && !image && !video && !attachment) {
       throw new BadRequestException(
-        'Post must contain text, an image, a video, or an attachment'
+        'Post must contain text, an image, a video, or an attachment',
       );
     }
     const generalCategory = await this.prisma.category.findFirst({
@@ -96,19 +121,36 @@ export class PostsService {
     if (!generalCategory) {
       throw new NotFoundException('Default category "General" not found');
     }
+    const resolvedMentions = await resolveMentions(this.prisma, dto.content);
     const attachmentExt = attachment ? attachment.mimetype : null;
-    const post = await this.prisma.post.create({
-      data: {
-        content: dto.content,
-        authorId,
-        categoryId: dto.categoryId ?? generalCategory.id,
-        imageUrl: image ? `/uploads/posts/images/${image.filename}` : null,
-        videoUrl: video ? `/uploads/posts/videos/${video.filename}` : null,
-        attachmentUrl: attachment ? `/uploads/posts/files/${attachment.filename}` : null,
-        attachmentName: attachment ? attachment.originalname : null,
-        attachmentMimeType: attachmentExt,
-      },
-      select: this.postSelect(authorId),
+    const post = await this.prisma.$transaction(async (tx) => {
+      const createdPost = await tx.post.create({
+        data: {
+          content: dto.content,
+          authorId,
+          categoryId: dto.categoryId ?? generalCategory.id,
+          imageUrl: image ? `/uploads/posts/images/${image.filename}` : null,
+          videoUrl: video ? `/uploads/posts/videos/${video.filename}` : null,
+          attachmentUrl: attachment ? `/uploads/posts/files/${attachment.filename}` : null,
+          attachmentName: attachment ? attachment.originalname : null,
+          attachmentMimeType: attachmentExt,
+        },
+        select: this.postSelect(authorId),
+      });
+      if (resolvedMentions.length) {
+        await tx.postMention.createMany({
+          data: resolvedMentions.map((mention) => ({
+            postId: createdPost.id,
+            userId: mention.userId,
+            username: mention.username ?? '',
+          })),
+          skipDuplicates: true,
+        });
+      }
+      return tx.post.findUniqueOrThrow({
+        where: { id: createdPost.id },
+        select: this.postSelect(authorId),
+      });
     });
     return formatPost(post, authorId);
   }
@@ -172,10 +214,31 @@ export class PostsService {
     if (post.authorId !== userId) {
       throw new ForbiddenException('You can only edit your own posts');
     }
-    const updatedPost = await this.prisma.post.update({
-      where: { id: postId },
-      data: dto,
-      select: this.postSelect(userId),
+    const nextContent = dto.content !== undefined ? dto.content : post.content;
+    const resolvedMentions = await resolveMentions(this.prisma, nextContent);
+    const updatedPost = await this.prisma.$transaction(async (tx) => {
+      await tx.post.update({
+        where: { id: postId },
+        data: dto,
+        select: this.postSelect(userId),
+      });
+      await tx.postMention.deleteMany({
+        where: { postId },
+      });
+      if (resolvedMentions.length) {
+        await tx.postMention.createMany({
+          data: resolvedMentions.map((mention) => ({
+            postId,
+            userId: mention.userId,
+            username: mention.username ?? '',
+          })),
+          skipDuplicates: true,
+        });
+      }
+      return tx.post.findUniqueOrThrow({
+        where: { id: postId },
+        select: this.postSelect(userId),
+      });
     });
     return formatPost(updatedPost, userId);
   }
