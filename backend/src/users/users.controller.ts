@@ -5,6 +5,9 @@ import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { avatarUploadOptions } from '../common/upload/multer-options';
+import { RolesGuard } from '../auth/roles.guard';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('users')
 export class UsersController {
@@ -43,5 +46,12 @@ export class UsersController {
   @Get(':id')
   getUser(@Param('id') id: string) {
     return this.usersService.getPublicProfile(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @Patch(':id/role')
+  updateUserRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto) {
+    return this.usersService.updateUserRole(id, dto.role);
   }
 }

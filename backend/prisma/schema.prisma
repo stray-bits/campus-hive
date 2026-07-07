@@ -7,12 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  STUDENT
+  MODERATOR
+  SUPER_ADMIN
+}
+
 model User {
   id              String           @id @default(cuid())
   email           String           @unique
   password        String
   firstName       String
   lastName        String
+  role            UserRole         @default(STUDENT)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   avatarUrl       String?

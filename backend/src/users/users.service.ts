@@ -8,6 +8,31 @@ import * as fs from 'fs';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
+  private privateUserSelect = {
+    id: true,
+    email: true,
+    firstName: true,
+    lastName: true,
+    username: true,
+    bio: true,
+    department: true,
+    graduationYear: true,
+    avatarUrl: true,
+    createdAt: true,
+    role: true,
+  };
+  private publicUserSelect = {
+    id: true,
+    firstName: true,
+    lastName: true,
+    username: true,
+    bio: true,
+    department: true,
+    graduationYear: true,
+    avatarUrl: true,
+    createdAt: true,
+  };
+
   findByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
@@ -28,18 +53,7 @@ export class UsersService {
   async findMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        username: true,
-        bio: true,
-        department: true,
-        graduationYear: true,
-        avatarUrl: true,
-        createdAt: true,
-      },
+      select: this.privateUserSelect,
     });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -50,17 +64,7 @@ export class UsersService {
   async getPublicProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        username: true,
-        bio: true,
-        department: true,
-        graduationYear: true,
-        avatarUrl: true,
-        createdAt: true,
-      },
+      select: this.publicUserSelect,
     });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -184,5 +188,26 @@ export class UsersService {
       orderBy: { createdAt: 'desc' },
     });
     return posts.map((post) => formatPost(post, currentUserId));
+  }
+
+  async updateUserRole(userId: string, role: UserRole) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { role },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        email: true,
+        role: true,
+      },
+    });
   }
 }
