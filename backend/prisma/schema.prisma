@@ -13,6 +13,32 @@ enum UserRole {
   SUPER_ADMIN
 }
 
+enum ReportTargetType {
+  POST
+  COMMENT
+  USER
+}
+
+enum ReportStatus {
+  PENDING
+  OPEN
+  REVIEWED
+  RESOLVED
+  DISMISSED
+}
+
+enum ReportReason {
+  HARASSMENT
+  HATE_SPEECH
+  SPAM
+  IMPERSONATION
+  NSFW
+  VIOLENCE
+  MISINFORMATION
+  ACADEMIC_DISHONESTY
+  OTHER
+}
+
 model User {
   id              String           @id @default(cuid())
   email           String           @unique
@@ -33,6 +59,13 @@ model User {
   likes           Like[]
   posts           Post[]
   postMentions    PostMention[]
+
+  isSuspended     Boolean  @default(false)
+  suspendedAt      DateTime?
+  suspensionReason String?
+  reportsMade     Report[] @relation("ReportReporter")
+  reviewedReports Report[] @relation("ReportReviewedBy")
+  reports         Report[] @relation("ReportUser")
 }
 
 model Post {
@@ -53,17 +86,28 @@ model Post {
   author             User          @relation(fields: [authorId], references: [id])
   category           Category      @relation(fields: [categoryId], references: [id])
   mentions           PostMention[]
+
+  isAnonymous  Boolean  @default(false)
+  isHidden     Boolean  @default(false)
+  hiddenAt     DateTime?
+  hiddenReason String?
+  reports      Report[] @relation("ReportPost")
 }
 
 model Comment {
-  id        String           @id @default(cuid())
-  content   String
-  postId    String
-  authorId  String
-  createdAt DateTime         @default(now())
-  author    User             @relation(fields: [authorId], references: [id])
-  post      Post             @relation(fields: [postId], references: [id])
-  mentions  CommentMention[]
+  id           String           @id @default(cuid())
+  content      String
+  postId       String
+  authorId     String
+  author       User             @relation(fields: [authorId], references: [id])
+  post         Post             @relation(fields: [postId], references: [id])
+  mentions     CommentMention[]
+  reports      Report[]         @relation("ReportComment")
+  isHidden     Boolean          @default(false)
+  hiddenAt     DateTime?
+  hiddenReason String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime        @updatedAt
 }
 
 model Like {
@@ -116,4 +160,28 @@ model CommentMention {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([commentId, userId])
+}
+
+model Report {
+  id           String           @id @default(cuid())
+  reporterId   String
+  targetType   ReportTargetType
+  reason       ReportReason
+  details      String?
+  status       ReportStatus     @default(PENDING)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  postId       String?
+  commentId    String?
+  targetUserId String?
+
+  reviewedById   String?
+  reviewedAt     DateTime?
+  resolutionNote String?
+  reporter       User      @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reviewedBy     User?     @relation("ReportReviewedBy", fields: [reviewedById], references: [id])
+
+  post       Post?    @relation("ReportPost", fields: [postId], references: [id], onDelete: Cascade)
+  comment    Comment? @relation("ReportComment", fields: [commentId], references: [id], onDelete: Cascade)
+  targetUser User?    @relation("ReportUser",fields: [targetUserId], references: [id], onDelete: Cascade)
 }

@@ -8,6 +8,7 @@ import { avatarUploadOptions } from '../common/upload/multer-options';
 import { RolesGuard } from '../auth/roles.guard';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../common/enums/user-role.enum';
 
 @Controller('users')
 export class UsersController {
@@ -16,7 +17,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   getMe(@Req() req: any) {
-    return this.usersService.findMe(req.user.userId);
+    return this.usersService.findById(req.user.userId, req.user);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -40,18 +41,19 @@ export class UsersController {
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id/posts')
   getUserPosts(@Param('id') id: string, @Req() req: any) {
-    return this.usersService.getUserPosts(id, req.user?.userId);
+    return this.usersService.getUserPosts(id, req.user ?? undefined);
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  getUser(@Param('id') id: string) {
-    return this.usersService.getPublicProfile(id);
+  getUser(@Param('id') id: string, @Req() req: any) {
+    return this.usersService.findById(id, req.user ?? undefined);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN')
+  @Roles(UserRole.SUPER_ADMIN)
   @Patch(':id/role')
-  updateUserRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto) {
-    return this.usersService.updateUserRole(id, dto.role);
+  setRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto) {
+    return this.usersService.setRole(id, dto.role);
   }
 }

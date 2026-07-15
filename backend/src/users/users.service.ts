@@ -3,12 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { formatPost } from '../common/formatters/post-response.util';
 import { join } from 'path';
 import * as fs from 'fs';
+import { isModerator } from '../common/utils/role.util';
+import { UserRole } from '../common/enums/user-role.enum';
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  private privateUserSelect = {
+  private readonly privateUserSelect = {
     id: true,
     email: true,
     firstName: true,
@@ -20,8 +22,9 @@ export class UsersService {
     avatarUrl: true,
     createdAt: true,
     role: true,
-  };
-  private publicUserSelect = {
+    isSuspended: true,
+  } as const;
+  private readonly publicUserSelect = {
     id: true,
     firstName: true,
     lastName: true,
@@ -31,7 +34,7 @@ export class UsersService {
     graduationYear: true,
     avatarUrl: true,
     createdAt: true,
-  };
+  } as const;
 
   findByEmail(email: string) {
     return this.prisma.user.findUnique({
@@ -45,31 +48,26 @@ export class UsersService {
     firstName: string;
     lastName: string;
   }) {
-    return this.prisma.user.create({
-      data,
-    });
+    return this.prisma.user.create({ data });
   }
 
-  async findMe(userId: string) {
+  async findById(id: string, currentUser?: { userId?: string; role?: string }) {
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: { id },
       select: this.privateUserSelect,
     });
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return user;
-  }
-
-  async getPublicProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+    const isSelf = currentUser?.userId === user.id;
+    if (isSelf || isModerator(currentUser)) {
+      return user;
+    }
+    const publicUser = await this.prisma.user.findUnique({
+      where: { id },
       select: this.publicUserSelect,
     });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    return user;
+    return publicUser;
   }
 
   async updateProfile(
@@ -95,6 +93,8 @@ export class UsersService {
         graduationYear: true,
         avatarUrl: true,
         createdAt: true,
+        role: true,
+        isSuspended: true,
       },
     });
   }
@@ -151,17 +151,21 @@ export class UsersService {
     });
   }
 
-  async getUserPosts(userId: string, currentUserId?: string) {
+  async getUserPosts(userId: string, currentUser?: { userId?: string; role?: string }) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    const where: any = { authorId: userId };
+    if (!isModerator(currentUser)) {
+      where.isHidden = false;
+    }
     const posts = await this.prisma.post.findMany({
-      where: { authorId: userId },
+      where,
       include: {
-        category: true,
+        category: { select: { id: true, name: true } },
         author: {
           select: {
             id: true,
@@ -178,19 +182,37 @@ export class UsersService {
             bookmarks: true,
           },
         },
-        likes: {
-          select: { userId: true },
-        },
-        bookmarks: {
-          select: { userId: true },
+        likes: currentUser?.userId
+          ? {
+              where: { userId: currentUser.userId },
+              select: { userId: true },
+            }
+          : { select: { userId: true } },
+        bookmarks: currentUser?.userId
+          ? {
+              where: { userId: currentUser.userId },
+              select: { userId: true },
+            }
+          : { select: { userId: true } },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
-    return posts.map((post) => formatPost(post, currentUserId));
+    return posts.map((post) => formatPost(post, currentUser));
   }
 
-  async updateUserRole(userId: string, role: UserRole) {
+  async setRole(userId: string, role: UserRole) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });

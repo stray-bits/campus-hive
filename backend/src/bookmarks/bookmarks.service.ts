@@ -1,17 +1,22 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatPost } from '../common/formatters/post-response.util';
+import { ensureUserNotSuspended } from '../common/utils/user-status.util';
 
 @Injectable()
 export class BookmarksService {
   constructor(private prisma: PrismaService) {}
 
   async addBookmark(userId: string, postId: string) {
+    await ensureUserNotSuspended(this.prisma, userId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
     });
     if (!post) {
       throw new NotFoundException('Post not found');
+    }
+    if (post.isHidden) {
+      throw new ForbiddenException('This post is no longer available.');
     }
     const existing = await this.prisma.bookmark.findUnique({
       where: { userId_postId: { userId, postId } },
@@ -22,19 +27,24 @@ export class BookmarksService {
     await this.prisma.bookmark.create({
       data: { userId, postId },
     });
-    const bookmarksCount = await this.prisma.bookmark.count({
-      where: { postId },
-    });
     return {
       bookmarked: true,
       postId,
-      counts: {
-        bookmarks: bookmarksCount,
-      },
+      _count: { select: { likes: true, comments: true, bookmarks: true } },
     };
   }
 
   async removeBookmark(userId: string, postId: string) {
+    await ensureUserNotSuspended(this.prisma, userId);
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.isHidden) {
+      throw new ForbiddenException('This post is no longer available.');
+    }
     const existing = await this.prisma.bookmark.findUnique({
       where: { userId_postId: { userId, postId } },
     });
@@ -44,21 +54,16 @@ export class BookmarksService {
     await this.prisma.bookmark.delete({
       where: { userId_postId: { userId, postId } },
     });
-    const bookmarksCount = await this.prisma.bookmark.count({
-      where: { postId },
-    });
     return {
       bookmarked: false,
       postId,
-      counts: {
-        bookmarks: bookmarksCount,
-      },
+      _count: { select: { likes: true, comments: true, bookmarks: true } },
     };
   }
 
   async getUserBookmarks(userId: string) {
     const bookmarks = await this.prisma.bookmark.findMany({
-      where: { userId },
+      where: { userId, post: { isHidden: false } },
       include: {
         post: {
           include: {
@@ -72,29 +77,23 @@ export class BookmarksService {
                 avatarUrl: true,
               },
             },
-            _count: {
-              select: {
-                likes: true,
-                comments: true,
-                bookmarks: true,
-              },
-            },
-            likes: {
-              select: { userId: true },
-            },
-            bookmarks: {
-              select: { userId: true },
-            },
+            _count: { select: { likes: true, comments: true, bookmarks: true } },
+            likes: { select: { userId: true } },
+            bookmarks: userId
+              ? {
+                  where: { userId: userId },
+                  select: { userId: true },
+                }
+              : { select: { userId: true } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
-
     return bookmarks.map((bookmark) => ({
       id: bookmark.id,
       createdAt: bookmark.createdAt,
-      post: formatPost(bookmark.post, userId),
+      post: formatPost(bookmark.post, { userId: userId }),
     }));
   }
 
@@ -102,8 +101,6 @@ export class BookmarksService {
     const bookmark = await this.prisma.bookmark.findUnique({
       where: { userId_postId: { userId, postId } },
     });
-    return {
-      bookmarked: !!bookmark,
-    };
+    return { postId, bookmarked: !!bookmark };
   }
 }

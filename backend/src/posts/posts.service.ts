@@ -6,6 +6,8 @@ import { formatPost } from '../common/formatters/post-response.util';
 import { join } from 'path';
 import * as fs from 'fs';
 import { resolveMentions } from '../common/utils/mentions.util';
+import { isModerator } from '../common/utils/role.util';
+import { ensureUserNotSuspended } from '../common/utils/user-status.util';
 
 @Injectable()
 export class PostsService {
@@ -18,8 +20,13 @@ export class PostsService {
       imageUrl: true,
       videoUrl: true,
       attachmentUrl: true,
+      attachmentName: true,
+      attachmentMimeType: true,
       createdAt: true,
       updatedAt: true,
+      isAnonymous: true,
+      isHidden: true,
+      hiddenReason: true,
       category: {
         select: { id: true, name: true },
       },
@@ -107,6 +114,7 @@ export class PostsService {
       attachment?: Express.Multer.File[];
     },
   ) {
+    await ensureUserNotSuspended(this.prisma, authorId);
     const image = files?.image?.[0];
     const video = files?.video?.[0];
     const attachment = files?.attachment?.[0];
@@ -129,13 +137,13 @@ export class PostsService {
           content: dto.content,
           authorId,
           categoryId: dto.categoryId ?? generalCategory.id,
+          isAnonymous: !!dto.isAnonymous,
           imageUrl: image ? `/uploads/posts/images/${image.filename}` : null,
           videoUrl: video ? `/uploads/posts/videos/${video.filename}` : null,
           attachmentUrl: attachment ? `/uploads/posts/files/${attachment.filename}` : null,
           attachmentName: attachment ? attachment.originalname : null,
           attachmentMimeType: attachmentExt,
         },
-        select: this.postSelect(authorId),
       });
       if (resolvedMentions.length) {
         await tx.postMention.createMany({
@@ -152,59 +160,75 @@ export class PostsService {
         select: this.postSelect(authorId),
       });
     });
-    return formatPost(post, authorId);
+    return formatPost(post, { userId: authorId });
   }
 
-  async getFeed(currentUserId?: string, category?: string) {
+  async getFeed(currentUser?: { userId?: string, role?: string }, category?: string) {
+    const where: any = category ? { category: { name: category } } : {};
+    if (!isModerator(currentUser)) {
+      where.isHidden = false;
+    }
     const posts = await this.prisma.post.findMany({
-      where: category ? { category: { name: category } } : {},
-      select: this.postSelect(currentUserId),
+      where,
+      select: this.postSelect(currentUser?.userId),
       orderBy: { createdAt: 'desc' },
     });
-    return posts.map((post) => formatPost(post, currentUserId));
+    return posts.map((post) => formatPost(post, currentUser));
   }
 
-  async search(query: string, currentUserId?: string) {
+  async search(query: string, currentUser?: { userId?: string, role?: string }) {
     if (!query?.trim()) {
       throw new BadRequestException('Search query is required');
     }
+    const where: any = {
+      OR: [
+        { content: { contains: query, mode: 'insensitive' } },
+        { category: { name: { contains: query, mode: 'insensitive' } } },
+        { author: { username: { contains: query, mode: 'insensitive' } } },
+        { author: { firstName: { contains: query, mode: 'insensitive' } } },
+        { author: { lastName: { contains: query, mode: 'insensitive' } } },
+      ],
+    };
+    if (!isModerator(currentUser)) {
+      where.isHidden = false;
+    }
     const posts = await this.prisma.post.findMany({
-      where: {
-        OR: [
-          { content: { contains: query, mode: 'insensitive' } },
-          { category: { name: { contains: query, mode: 'insensitive' } } },
-          { author: { username: { contains: query, mode: 'insensitive' } } },
-          { author: { firstName: { contains: query, mode: 'insensitive' } } },
-          { author: { lastName: { contains: query, mode: 'insensitive' } } },
-        ],
-      },
-      select: this.postSelect(currentUserId),
+      where,
+      select: this.postSelect(currentUser?.userId),
       orderBy: { createdAt: 'desc' },
     });
-    return posts.map((post) => formatPost(post, currentUserId));
+    return posts.map((post) => formatPost(post, currentUser));
   }
 
-  async getByCategory(categoryId: string, currentUserId?: string) {
+  async getByCategory(categoryId: string, currentUser?: { userId?: string; role?: string }) {
+    const where: any = { categoryId };
+    if (!isModerator(currentUser)) {
+      where.isHidden = false;
+    }
     const posts = await this.prisma.post.findMany({
-      where: { categoryId },
-      select: this.postSelect(currentUserId),
+      where,
+      select: this.postSelect(currentUser?.userId),
       orderBy: { createdAt: 'desc' },
     });
-    return posts.map((post) => formatPost(post, currentUserId));
+    return posts.map((post) => formatPost(post, currentUser));
   }
 
-  async getPost(id: string, currentUserId?: string) {
+  async getPost(id: string, currentUser?: { userId?: string; role?: string }) {
     const post = await this.prisma.post.findUnique({
       where: { id },
-      select: this.postWithCommentsSelect(currentUserId),
+      select: this.postWithCommentsSelect(currentUser?.userId),
     });
     if (!post) {
       throw new NotFoundException('Post not found');
     }
-    return formatPost(post, currentUserId);
+    if (post.isHidden && !isModerator(currentUser)) {
+      throw new NotFoundException('Post not found');
+    }
+    return formatPost(post, currentUser);
   }
 
   async updatePost(postId: string, userId: string, dto: UpdatePostDto) {
+    await ensureUserNotSuspended(this.prisma, userId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
     });
@@ -214,13 +238,19 @@ export class PostsService {
     if (post.authorId !== userId) {
       throw new ForbiddenException('You can only edit your own posts');
     }
+    if (post.isHidden) {
+      throw new ForbiddenException('Hidden posts cannot be edited');
+    }
     const nextContent = dto.content !== undefined ? dto.content : post.content;
     const resolvedMentions = await resolveMentions(this.prisma, nextContent);
     const updatedPost = await this.prisma.$transaction(async (tx) => {
       await tx.post.update({
         where: { id: postId },
-        data: dto,
-        select: this.postSelect(userId),
+        data: {
+          content: dto.content,
+          categoryId: dto.categoryId,
+          isAnonymous: dto.isAnonymous !== undefined ? dto.isAnonymous : post.isAnonymous,
+        },
       });
       await tx.postMention.deleteMany({
         where: { postId },
@@ -240,10 +270,11 @@ export class PostsService {
         select: this.postSelect(userId),
       });
     });
-    return formatPost(updatedPost, userId);
+    return formatPost(updatedPost, { userId });
   }
 
   async deletePost(postId: string, userId: string) {
+    await ensureUserNotSuspended(this.prisma, userId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
     });

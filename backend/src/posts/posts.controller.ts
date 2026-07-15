@@ -6,6 +6,9 @@ import { UpdatePostDto } from './dto/update-post.dto';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { postFilesUploadOptions } from '../common/upload/multer-options';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../common/enums/user-role.enum';
 
 @Controller('posts')
 export class PostsController {
@@ -39,25 +42,25 @@ export class PostsController {
   @UseGuards(OptionalJwtAuthGuard)
   @Get('feed')
   getFeed(@Req() req: any, @Query('category') category?: string) {
-    return this.postsService.getFeed(req.user?.userId, category);
+    return this.postsService.getFeed(req.user ?? undefined, category);
   }
 
   @UseGuards(OptionalJwtAuthGuard)
   @Get('search')
   search(@Req() req: any, @Query('q') query: string) {
-    return this.postsService.search(query, req.user?.userId);
+    return this.postsService.search(query, req.user ?? undefined);
   }
 
   @UseGuards(OptionalJwtAuthGuard)
   @Get('category/:id')
   getByCategory(@Param('id') id: string, @Req() req: any) {
-    return this.postsService.getByCategory(id, req.user?.userId);
+    return this.postsService.getByCategory(id, req.user ?? undefined);
   }
 
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
   getPost(@Param('id') id: string, @Req() req: any) {
-    return this.postsService.getPost(id, req.user?.userId);
+    return this.postsService.getPost(id, req.user ?? undefined);
   }
 
   @UseGuards(JwtAuthGuard)

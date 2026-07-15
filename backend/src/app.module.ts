@@ -13,6 +13,8 @@ import { LikesModule } from './likes/likes.module';
 import { CategoriesModule } from './categories/categories.module';
 import { BookmarksModule } from './bookmarks/bookmarks.module';
 import { UploadsModule } from '../uploads/uploads.module';
+import { ReportsModule } from './reports/reports.module';
+import { ModerationModule } from './moderation/moderation.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { UploadsModule } from '../uploads/uploads.module';
     CategoriesModule,
     BookmarksModule,
     UploadsModule,
+    ReportsModule,
+    ModerationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

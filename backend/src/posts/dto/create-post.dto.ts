@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsBoolean } from 'class-validator';
 
 export class CreatePostDto {
   @IsOptional() @IsString() content?: string;
@@ -7,4 +7,5 @@ export class CreatePostDto {
   @IsOptional() @IsString() imageUrl?: string;
   @IsOptional() @IsString() videoUrl?: string;
   @IsOptional() @IsString() attachmentUrl?: string;
+  @IsOptional() @IsBoolean() isAnonymous?: boolean;
 }

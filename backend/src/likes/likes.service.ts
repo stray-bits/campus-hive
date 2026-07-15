@@ -1,16 +1,21 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ensureUserNotSuspended } from '../common/utils/user-status.util';
 
 @Injectable()
 export class LikesService {
   constructor(private prisma: PrismaService) {}
 
   async likePost(userId: string, postId: string) {
+    await ensureUserNotSuspended(this.prisma, userId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
     });
     if (!post) {
       throw new NotFoundException('Post not found');
+    }
+    if (post.isHidden) {
+      throw new ForbiddenException('This post is no longer available.');
     }
     const existingLike = await this.prisma.like.findUnique({
       where: { userId_postId: { userId, postId } },
@@ -21,19 +26,24 @@ export class LikesService {
     await this.prisma.like.create({
       data: { userId, postId },
     });
-    const likesCount = await this.prisma.like.count({
-      where: { postId },
-    });
     return {
       liked: true,
       postId,
-      counts: {
-        likes: likesCount,
-      },
+      _count: { select: { likes: true, comments: true, bookmarks: true } },
     };
   }
 
   async unlikePost(userId: string, postId: string) {
+    await ensureUserNotSuspended(this.prisma, userId);
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.isHidden) {
+      throw new ForbiddenException('This post is no longer available.');
+    }
     const existingLike = await this.prisma.like.findUnique({
       where: { userId_postId: { userId, postId } },
     });
@@ -43,15 +53,10 @@ export class LikesService {
     await this.prisma.like.delete({
       where: { userId_postId: { userId, postId } },
     });
-    const likesCount = await this.prisma.like.count({
-      where: { postId },
-    });
     return {
       liked: false,
       postId,
-      counts: {
-        likes: likesCount,
-      },
+      _count: { select: { likes: true, comments: true, bookmarks: true } },
     };
   }
 
@@ -59,8 +64,6 @@ export class LikesService {
     const like = await this.prisma.like.findUnique({
       where: { userId_postId: { userId, postId } },
     });
-    return {
-      liked: !!like,
-    };
+    return { postId, liked: !!like };
   }
 }
